@@ -1,0 +1,454 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  CONVERTED
+  LOST
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(EMPLOYEE)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedCustomers Customer[]         @relation("AssignedCustomers")
+  createdCustomers  Customer[]         @relation("CreatedCustomers")
+  activities        CustomerActivity[] @relation("UserActivities")
+
+  assignedLeads  Lead[]         @relation("AssignedLeads")
+  createdLeads   Lead[]         @relation("CreatedLeads")
+  leadActivities LeadActivity[] @relation("UserLeadActivities")
+  imports        ImportBatch[]  @relation("UserImports")
+
+  assignedSales         Sale[]                 @relation("AssignedSales")
+  createdSales          Sale[]                 @relation("CreatedSales")
+  saleCommunications    SaleCommunication[]    @relation("UserSaleCommunications")
+  assignedSaleTasks     SaleTask[]             @relation("AssignedSaleTasks")
+  createdSaleTasks      SaleTask[]             @relation("CreatedSaleTasks")
+  saleStatusChanges     SaleStatusHistory[]    @relation("UserSaleStatusChanges")
+  responsibleQuotations Quotation[]            @relation("ResponsibleQuotations")
+  createdQuotations     Quotation[]            @relation("CreatedQuotations")
+  responsibleOrders     Order[]                @relation("ResponsibleOrders")
+  createdOrders         Order[]                @relation("CreatedOrders")
+  assignedProjects      Project[]              @relation("AssignedProjects")
+  createdProjects       Project[]              @relation("CreatedProjects")
+  projectStatusChanges  ProjectStatusHistory[] @relation("UserProjectStatusChanges")
+
+  @@map("users")
+}
+
+model Customer {
+  id               String    @id @default(cuid())
+  companyName      String
+  contactPerson    String
+  phone            String?
+  email            String?
+  website          String?
+  industry         String?
+  location         String?
+  firstContactDate DateTime?
+  notes            String?   @db.Text
+  assignedToId     String?
+  createdById      String
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  assignedTo User?              @relation("AssignedCustomers", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy  User               @relation("CreatedCustomers", fields: [createdById], references: [id])
+  activities CustomerActivity[]
+  sales      Sale[]
+  quotations Quotation[]
+  orders     Order[]
+  projects   Project[]
+
+  @@index([companyName])
+  @@index([contactPerson])
+  @@index([email])
+  @@index([phone])
+  @@index([assignedToId])
+  @@index([archivedAt])
+  @@map("customers")
+}
+
+model CustomerActivity {
+  id           String       @id @default(cuid())
+  customerId   String
+  userId       String
+  activityType ActivityType
+  title        String
+  description  String       @db.Text
+  createdAt    DateTime     @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user     User     @relation("UserActivities", fields: [userId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@index([userId])
+  @@map("customer_activities")
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  companyName    String
+  contactPerson  String
+  phone          String?
+  email          String?
+  jobTitle       String?
+  industry       String?
+  location       String?
+  status         LeadStatus @default(NEW)
+  source         String?
+  estimatedValue Float?
+  notes          String?    @db.Text
+  assignedToId   String?
+  createdById    String
+  importBatchId  String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  assignedTo  User?          @relation("AssignedLeads", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy   User           @relation("CreatedLeads", fields: [createdById], references: [id])
+  importBatch ImportBatch?   @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  activities  LeadActivity[]
+  sales       Sale[]
+
+  @@index([companyName])
+  @@index([contactPerson])
+  @@index([email])
+  @@index([phone])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([importBatchId])
+  @@map("leads")
+}
+
+model LeadActivity {
+  id           String       @id @default(cuid())
+  leadId       String
+  userId       String
+  activityType ActivityType
+  title        String
+  description  String       @db.Text
+  createdAt    DateTime     @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User @relation("UserLeadActivities", fields: [userId], references: [id])
+
+  @@index([leadId, createdAt])
+  @@index([userId])
+  @@map("lead_activities")
+}
+
+model ImportBatch {
+  id             String   @id @default(cuid())
+  fileName       String
+  fileType       String
+  source         String   @default("Spreadsheet File")
+  targetModule   String   @default("LEADS")
+  totalRows      Int      @default(0)
+  successfulRows Int      @default(0)
+  skippedRows    Int      @default(0)
+  failedRows     Int      @default(0)
+  userId         String
+  createdAt      DateTime @default(now())
+
+  user  User   @relation("UserImports", fields: [userId], references: [id])
+  leads Lead[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("import_batches")
+}
+
+// ---------------------------------------------------------------------------
+// WEDNESDAY: SALES, QUOTATIONS, ORDERS & PROJECT MANAGEMENT
+// ---------------------------------------------------------------------------
+
+enum SalesStatus {
+  NEW_LEAD
+  RESEARCHED
+  FIRST_CONTACT_MADE
+  DECISION_MAKER_REACHED
+  INTERESTED
+  QUOTATION_CREATED
+  QUOTATION_SENT
+  FOLLOW_UP_REQUIRED
+  DEAL_WON
+  DEAL_LOST
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  IN_PRODUCTION
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectStatus {
+  ORDER_WON
+  DEPOSIT_PENDING
+  DEPOSIT_PAID
+  WAITING_FOR_CUSTOMER_MATERIALS
+  MATERIALS_COMPLETE
+  IN_PRODUCTION
+  INTERNAL_QUALITY_CONTROL
+  CUSTOMER_REVISIONS
+  CUSTOMER_APPROVAL
+  READY_FOR_HANDOVER
+  REMAINING_PAYMENT_PENDING
+  FULLY_PAID
+  WEBSITE_TRANSFERRED
+  PROJECT_COMPLETED
+}
+
+model Sale {
+  id              String      @id @default(cuid())
+  title           String
+  status          SalesStatus @default(NEW_LEAD)
+  estimatedValue  Float?
+  serviceType     String?
+  interests       String?     @db.Text
+  objections      String?     @db.Text
+  nextContactDate DateTime?
+  notes           String?     @db.Text
+  customerId      String?
+  leadId          String?
+  assignedToId    String?
+  createdById     String
+  wonAt           DateTime?
+  lostAt          DateTime?
+  lostReason      String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  customer       Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  lead           Lead?               @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  assignedTo     User?               @relation("AssignedSales", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy      User                @relation("CreatedSales", fields: [createdById], references: [id])
+  communications SaleCommunication[]
+  tasks          SaleTask[]
+  statusHistory  SaleStatusHistory[]
+  quotations     Quotation[]
+  orders         Order[]
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sales")
+}
+
+model SaleCommunication {
+  id                 String       @id @default(cuid())
+  saleId             String
+  userId             String
+  activityType       ActivityType @default(NOTE)
+  subject            String
+  notes              String       @db.Text
+  customerInterests  String?      @db.Text
+  customerObjections String?      @db.Text
+  nextFollowUpDate   DateTime?
+  createdAt          DateTime     @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  user User @relation("UserSaleCommunications", fields: [userId], references: [id])
+
+  @@index([saleId, createdAt])
+  @@index([userId])
+  @@map("sale_communications")
+}
+
+model SaleTask {
+  id           String    @id @default(cuid())
+  saleId       String
+  assignedToId String
+  createdById  String
+  title        String
+  description  String?   @db.Text
+  dueDate      DateTime
+  reminderDate DateTime?
+  isCompleted  Boolean   @default(false)
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sale       Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  assignedTo User @relation("AssignedSaleTasks", fields: [assignedToId], references: [id])
+  createdBy  User @relation("CreatedSaleTasks", fields: [createdById], references: [id])
+
+  @@index([saleId])
+  @@index([assignedToId, isCompleted])
+  @@index([dueDate])
+  @@map("sale_tasks")
+}
+
+model SaleStatusHistory {
+  id         String       @id @default(cuid())
+  saleId     String
+  userId     String
+  fromStatus SalesStatus?
+  toStatus   SalesStatus
+  notes      String?      @db.Text
+  createdAt  DateTime     @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  user User @relation("UserSaleStatusChanges", fields: [userId], references: [id])
+
+  @@index([saleId, createdAt])
+  @@map("sale_status_history")
+}
+
+model Quotation {
+  id                    String          @id @default(cuid())
+  quotationNumber       String          @unique
+  customerId            String
+  saleId                String?
+  serviceSold           String
+  quotationPrice        Float
+  quotationDate         DateTime        @default(now())
+  validUntil            DateTime?
+  responsibleEmployeeId String
+  createdById           String
+  status                QuotationStatus @default(DRAFT)
+  notes                 String?         @db.Text
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sale                Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  responsibleEmployee User     @relation("ResponsibleQuotations", fields: [responsibleEmployeeId], references: [id])
+  createdBy           User     @relation("CreatedQuotations", fields: [createdById], references: [id])
+  orders              Order[]
+
+  @@index([customerId])
+  @@index([saleId])
+  @@index([responsibleEmployeeId])
+  @@index([status])
+  @@index([quotationNumber])
+  @@map("quotations")
+}
+
+model Order {
+  id                    String      @id @default(cuid())
+  orderNumber           String      @unique
+  customerId            String
+  quotationId           String?
+  saleId                String?
+  serviceSold           String
+  orderDate             DateTime    @default(now())
+  totalAmount           Float
+  agreedCommission      Float
+  responsibleEmployeeId String
+  createdById           String
+  status                OrderStatus @default(CONFIRMED)
+  notes                 String?     @db.Text
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  customer            Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quotation           Quotation? @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  sale                Sale?      @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  responsibleEmployee User       @relation("ResponsibleOrders", fields: [responsibleEmployeeId], references: [id])
+  createdBy           User       @relation("CreatedOrders", fields: [createdById], references: [id])
+  project             Project?
+
+  @@index([customerId])
+  @@index([quotationId])
+  @@index([saleId])
+  @@index([responsibleEmployeeId])
+  @@index([status])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+model Project {
+  id                 String        @id @default(cuid())
+  projectNumber      String        @unique
+  title              String
+  customerId         String
+  orderId            String        @unique
+  status             ProjectStatus @default(ORDER_WON)
+  assignedToId       String?
+  createdById        String
+  startDate          DateTime      @default(now())
+  targetHandoverDate DateTime?
+  handoverDate       DateTime?
+  websiteUrl         String?
+  stagingUrl         String?
+  materialsNotes     String?       @db.Text
+  revisionsNotes     String?       @db.Text
+  notes              String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  customer      Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order         Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  assignedTo    User?                  @relation("AssignedProjects", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy     User                   @relation("CreatedProjects", fields: [createdById], references: [id])
+  statusHistory ProjectStatusHistory[]
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([projectNumber])
+  @@map("projects")
+}
+
+model ProjectStatusHistory {
+  id         String         @id @default(cuid())
+  projectId  String
+  userId     String
+  fromStatus ProjectStatus?
+  toStatus   ProjectStatus
+  notes      String?        @db.Text
+  createdAt  DateTime       @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserProjectStatusChanges", fields: [userId], references: [id])
+
+  @@index([projectId, createdAt])
+  @@map("project_status_history")
+}
