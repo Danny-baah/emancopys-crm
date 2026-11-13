@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCustomerById } from "@/actions/customers";
+import { prisma } from "@/lib/prisma";
 import { ActivityDialog } from "@/components/customers/activity-dialog";
 import { ArchiveDialog } from "@/components/customers/archive-dialog";
+import { CustomerServicesCard } from "@/components/services/customer-services-card";
 import { ActivityType } from "@/lib/generated/prisma/enums";
 import {
   ArrowLeft,
@@ -27,7 +29,14 @@ interface CustomerDetailsPageProps {
 export default async function CustomerDetailsPage({ params }: CustomerDetailsPageProps) {
   const { id } = await params;
 
-  const customer = await getCustomerById(id);
+  const [customer, availableServices] = await Promise.all([
+    getCustomerById(id),
+    prisma.additionalService.findMany({
+      where: { isActive: true },
+      orderBy: { price: "asc" },
+      select: { id: true, name: true, price: true, isRecurring: true, description: true },
+    }),
+  ]);
 
   if (!customer) {
     notFound();
@@ -388,6 +397,14 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
           )}
         </div>
       </div>
+
+      {/* Additional Services & Upselling */}
+      <CustomerServicesCard
+        customerId={customer.id}
+        customerName={customer.companyName}
+        services={customer.customerServices || []}
+        availableServices={availableServices}
+      />
     </div>
   );
 }

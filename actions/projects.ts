@@ -8,7 +8,8 @@ import {
   type ProjectUpdateFormValues,
 } from "@/lib/validations/projects";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { ProjectStatus, Role } from "@/lib/generated/prisma/enums";
+import { ProjectStatus, Role, AuditAction } from "@/lib/generated/prisma/enums";
+import { logAudit } from "@/lib/audit";
 
 function safeRevalidate(path: string) {
   try {
@@ -258,7 +259,7 @@ export async function updateProjectStatus(
           : undefined,
         handoverDate:
           validated.status === ProjectStatus.PROJECT_COMPLETED ||
-          validated.status === ProjectStatus.WEBSITE_TRANSFERRED
+            validated.status === ProjectStatus.WEBSITE_TRANSFERRED
             ? validated.handoverDate
               ? new Date(validated.handoverDate)
               : new Date()
@@ -284,6 +285,16 @@ export async function updateProjectStatus(
         },
       });
     }
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: statusChanged ? AuditAction.STATUS_CHANGE : AuditAction.UPDATE,
+    entityType: "PROJECT",
+    entityId: id,
+    details: statusChanged
+      ? `Project status changed from ${existing.status} to ${validated.status}.`
+      : `Updated project details.`,
   });
 
   safeRevalidate(`/projects/${id}`);

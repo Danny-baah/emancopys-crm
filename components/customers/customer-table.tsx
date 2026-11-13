@@ -15,6 +15,7 @@ import {
   Calendar,
   Mail,
   FileText,
+  Users,
 } from "lucide-react";
 import { ActivityType } from "@/lib/generated/prisma/enums";
 import { ArchiveDialog } from "@/components/customers/archive-dialog";
@@ -46,6 +47,9 @@ interface CustomerTableProps {
   totalCount: number;
   currentPage: number;
   totalPages: number;
+  activeSearch?: string;
+  activeIndustry?: string;
+  activeAssignedToId?: string;
 }
 
 export function CustomerTable({
@@ -53,6 +57,9 @@ export function CustomerTable({
   totalCount,
   currentPage,
   totalPages,
+  activeSearch = "",
+  activeIndustry = "",
+  activeAssignedToId = "",
 }: CustomerTableProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -208,11 +215,38 @@ export function CustomerTable({
       {/* Table Container Card */}
       <div className="bg-white rounded-[24px] border border-[#e8ecea] shadow-[0_10px_30px_rgba(0,0,0,0.02)] overflow-hidden">
         {customers.length === 0 ? (
-          <div className="py-16 text-center text-xs text-[#708078]">
-            <p className="font-semibold text-sm text-[#182922]">No customers found</p>
-            <p className="mt-1 text-[#8a9992]">
-              Try adjusting your search criteria or register a new customer.
+          <div className="py-16 text-center text-xs text-[#708078] px-4">
+            <div className="w-12 h-12 rounded-2xl bg-[#f0f7f3] text-[#377b58] flex items-center justify-center mx-auto mb-3">
+              <Users className="w-6 h-6" />
+            </div>
+            <p className="font-semibold text-sm text-[#182922]">
+              {activeSearch
+                ? `No customers found matching "${activeSearch}"`
+                : "No customers found"}
             </p>
+            <p className="mt-1 text-[#8a9992] max-w-sm mx-auto">
+              {activeSearch || activeIndustry || activeAssignedToId
+                ? "Try checking for spelling errors, adjusting your search terms, or clearing your filters."
+                : "Try adjusting your search criteria or register a new customer."}
+            </p>
+            {Boolean(activeSearch || activeIndustry || activeAssignedToId) && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.delete("search");
+                    params.delete("industry");
+                    params.delete("assignedToId");
+                    params.set("page", "1");
+                    router.push(`${pathname}?${params.toString()}`);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#083d34] hover:bg-[#0b4b40] text-white text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+                >
+                  Clear search & filters
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">

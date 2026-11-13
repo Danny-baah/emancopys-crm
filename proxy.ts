@@ -7,7 +7,17 @@ export const proxy = auth((req) => {
 
   const isAuthPage = pathname.startsWith("/login");
   const isProtected =
-    pathname.startsWith("/dashboard") || pathname.startsWith("/customers");
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/customers") ||
+    pathname.startsWith("/leads") ||
+    pathname.startsWith("/sales") ||
+    pathname.startsWith("/quotations") ||
+    pathname.startsWith("/orders") ||
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/payments") ||
+    pathname.startsWith("/employees") ||
+    pathname.startsWith("/services") ||
+    pathname.startsWith("/audit-logs");
 
   if (isProtected && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
@@ -15,6 +25,16 @@ export const proxy = auth((req) => {
       loginUrl.searchParams.set("callbackUrl", encodeURI(pathname));
     }
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Admin-only route guard
+  const isAdminRoute =
+    pathname.startsWith("/employees") || pathname.startsWith("/audit-logs");
+  if (isAdminRoute && isLoggedIn) {
+    const userRole = (req.auth?.user as { role?: string })?.role;
+    if (userRole !== "ADMIN") {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
   }
 
   if (isAuthPage && isLoggedIn) {

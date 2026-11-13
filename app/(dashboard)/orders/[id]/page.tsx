@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth-utils";
-import { getOrderById } from "@/actions/orders";
+import { getOrderById, updateOrderStatus } from "@/actions/orders";
 import { createProjectForOrder } from "@/actions/projects";
+import { OrderPaymentsCard } from "@/components/payments/order-payments-card";
+import { OrderStatus } from "@/lib/generated/prisma/enums";
 import {
   ArrowLeft,
   Calendar,
@@ -93,9 +95,33 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#e6f4ea] text-[#137333] border border-[#b7e1cd]">
-              {order.status}
-            </span>
+            <form
+              action={async (formData: FormData) => {
+                "use server";
+                const newStatus = formData.get("status") as OrderStatus;
+                if (newStatus) {
+                  await updateOrderStatus(order.id, newStatus);
+                }
+              }}
+              className="flex items-center gap-2"
+            >
+              <select
+                name="status"
+                defaultValue={order.status}
+                aria-label="Update Order Status"
+                className="h-8 px-2.5 rounded-lg border border-[#ece8e3] bg-white text-xs font-semibold text-[#182922] focus:outline-none focus:border-[#062e26] cursor-pointer"
+              >
+                {Object.values(OrderStatus).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="h-8 px-3 rounded-lg bg-[#062e26] text-white text-xs font-semibold hover:bg-[#0b4337] transition-colors cursor-pointer"
+              >
+                Save
+              </button>
+            </form>
           </div>
         </div>
 
@@ -216,6 +242,9 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
           )}
         </div>
       </div>
+
+      {/* Payment Management Card */}
+      <OrderPaymentsCard order={order} />
     </div>
   );
 }

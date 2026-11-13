@@ -1,13 +1,15 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth-utils";
-import { getQuotationById } from "@/actions/quotations";
+import { getQuotationById, updateQuotationStatus } from "@/actions/quotations";
+import { QuotationStatus } from "@/lib/generated/prisma/enums";
 import {
   ArrowLeft,
   CheckCircle,
   ShoppingBag,
   Mail,
   Phone,
+  Edit,
 } from "lucide-react";
 
 export const metadata = {
@@ -46,6 +48,14 @@ export default async function QuotationDetailPage({
         </Link>
 
         <div className="flex items-center gap-2.5">
+          <Link
+            href={`/quotations/${quotation.id}/edit`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#ece8e3] bg-white text-xs font-semibold text-[#182922] hover:bg-[#f4f7f6] transition-colors shadow-2xs"
+          >
+            <Edit className="w-3.5 h-3.5 text-[#708078]" />
+            <span>Edit Quotation</span>
+          </Link>
+
           <Link
             href={`/orders/new?quotationId=${quotation.id}&customerId=${quotation.customerId}${
               quotation.saleId ? `&saleId=${quotation.saleId}` : ""
@@ -198,11 +208,38 @@ export default async function QuotationDetailPage({
 
         {/* Status Badge & Existing Order Notice */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#fcfbf9] border border-[#ece8e3]">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold text-[#708078]">Current Status:</span>
             <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#062e26] text-white">
               {quotation.status}
             </span>
+            <form
+              action={async (formData: FormData) => {
+                "use server";
+                const newStatus = formData.get("status") as QuotationStatus;
+                if (newStatus) {
+                  await updateQuotationStatus(quotation.id, newStatus);
+                }
+              }}
+              className="flex items-center gap-1.5 ml-2"
+            >
+              <select
+                name="status"
+                defaultValue={quotation.status}
+                aria-label="Update Quotation Status"
+                className="h-8 px-2.5 rounded-lg border border-[#ece8e3] bg-white text-xs font-semibold text-[#182922] focus:outline-none focus:border-[#062e26] cursor-pointer"
+              >
+                {Object.values(QuotationStatus).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="h-8 px-3 rounded-lg bg-[#062e26] text-white text-xs font-semibold hover:bg-[#0b4337] transition-colors cursor-pointer"
+              >
+                Save
+              </button>
+            </form>
           </div>
 
           {hasOrders && (

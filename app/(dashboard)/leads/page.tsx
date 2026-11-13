@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/auth-utils";
 import { getLeads } from "@/actions/leads";
 import { LeadFilters } from "@/components/leads/lead-filters";
 import { LeadTable } from "@/components/leads/lead-table";
-import { Role, LeadStatus } from "@/lib/generated/prisma/enums";
+import { Role, SalesStatus } from "@/lib/generated/prisma/enums";
 import {
   Users,
   Target,
@@ -44,20 +44,33 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
     contactedCount,
     qualifiedCount,
     proposalCount,
-    convertedCount,
+    wonCount,
+    lostCount,
     pipelineSum,
     leadsData,
   ] = await Promise.all([
     prisma.lead.count({ where: userScope }),
-    prisma.lead.count({ where: { ...userScope, status: LeadStatus.NEW } }),
-    prisma.lead.count({ where: { ...userScope, status: LeadStatus.CONTACTED } }),
-    prisma.lead.count({ where: { ...userScope, status: LeadStatus.QUALIFIED } }),
-    prisma.lead.count({ where: { ...userScope, status: LeadStatus.PROPOSAL_SENT } }),
-    prisma.lead.count({ where: { ...userScope, status: LeadStatus.CONVERTED } }),
+    prisma.lead.count({ where: { ...userScope, status: SalesStatus.NEW_LEAD } }),
+    prisma.lead.count({ where: { ...userScope, status: SalesStatus.FIRST_CONTACT_MADE } }),
+    prisma.lead.count({ where: { ...userScope, status: SalesStatus.DECISION_MAKER_REACHED } }),
+    prisma.lead.count({ where: { ...userScope, status: SalesStatus.QUOTATION_SENT } }),
+    prisma.lead.count({ where: { ...userScope, status: SalesStatus.DEAL_WON } }),
+    prisma.lead.count({ where: { ...userScope, status: SalesStatus.DEAL_LOST } }),
     prisma.lead.aggregate({
       where: {
         ...userScope,
-        status: { in: [LeadStatus.QUALIFIED, LeadStatus.PROPOSAL_SENT, LeadStatus.NEW] },
+        status: {
+          in: [
+            SalesStatus.NEW_LEAD,
+            SalesStatus.RESEARCHED,
+            SalesStatus.FIRST_CONTACT_MADE,
+            SalesStatus.DECISION_MAKER_REACHED,
+            SalesStatus.INTERESTED,
+            SalesStatus.QUOTATION_CREATED,
+            SalesStatus.QUOTATION_SENT,
+            SalesStatus.FOLLOW_UP_REQUIRED,
+          ],
+        },
       },
       _sum: { estimatedValue: true },
     }),
@@ -191,7 +204,7 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
               Converted Deals
             </div>
             <div className="font-serif text-3xl lg:text-4xl font-normal text-[#13231c] mt-1">
-              {convertedCount}
+              {wonCount}
             </div>
           </div>
           <div className="text-xs text-[#708078] font-normal mt-3">
@@ -211,7 +224,8 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
             contacted: contactedCount,
             qualified: qualifiedCount,
             proposal: proposalCount,
-            converted: convertedCount,
+            won: wonCount,
+            lost: lostCount,
           }}
         />
       </Suspense>

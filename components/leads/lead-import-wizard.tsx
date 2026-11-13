@@ -86,7 +86,7 @@ export function LeadImportWizard({
     const sampleData = [
       {
         "Company Name": "Ashanti Precision Manufacturing",
-        "Contact Person": "Akua Servaa",
+        "Contact Person": "Akua Serwaa",
         "Email": "akua@ashantimanufacturing.com",
         "Phone": "+233 24 123 4567",
         "Job Title": "Procurement Manager",

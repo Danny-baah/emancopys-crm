@@ -23,14 +23,6 @@ enum ActivityType {
   OTHER
 }
 
-enum LeadStatus {
-  NEW
-  CONTACTED
-  QUALIFIED
-  PROPOSAL_SENT
-  CONVERTED
-  LOST
-}
 
 model User {
   id           String   @id @default(cuid())
@@ -64,6 +56,9 @@ model User {
   assignedProjects      Project[]              @relation("AssignedProjects")
   createdProjects       Project[]              @relation("CreatedProjects")
   projectStatusChanges  ProjectStatusHistory[] @relation("UserProjectStatusChanges")
+  receivedPayments      Payment[]              @relation("ReceivedPayments")
+  auditLogs             AuditLog[]             @relation("UserAuditLogs")
+  assignedCustomerServices CustomerService[]   @relation("EmployeeCustomerServices")
 
   @@map("users")
 }
@@ -92,6 +87,8 @@ model Customer {
   quotations Quotation[]
   orders     Order[]
   projects   Project[]
+  payments   Payment[]
+  customerServices CustomerService[]
 
   @@index([companyName])
   @@index([contactPerson])
@@ -128,7 +125,7 @@ model Lead {
   jobTitle       String?
   industry       String?
   location       String?
-  status         LeadStatus @default(NEW)
+  status         SalesStatus @default(NEW_LEAD)
   source         String?
   estimatedValue Float?
   notes          String?    @db.Text
@@ -382,10 +379,14 @@ model Order {
   agreedCommission      Float
   responsibleEmployeeId String
   createdById           String
-  status                OrderStatus @default(CONFIRMED)
-  notes                 String?     @db.Text
-  createdAt             DateTime    @default(now())
-  updatedAt             DateTime    @updatedAt
+  status                OrderStatus   @default(CONFIRMED)
+  notes                 String?       @db.Text
+  invoiceDate           DateTime?
+  paymentDueDate        DateTime?
+  depositAmount         Float?
+  paymentStatus         PaymentStatus @default(UNPAID)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   customer            Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
   quotation           Quotation? @relation(fields: [quotationId], references: [id], onDelete: SetNull)
@@ -393,12 +394,14 @@ model Order {
   responsibleEmployee User       @relation("ResponsibleOrders", fields: [responsibleEmployeeId], references: [id])
   createdBy           User       @relation("CreatedOrders", fields: [createdById], references: [id])
   project             Project?
+  payments            Payment[]
 
   @@index([customerId])
   @@index([quotationId])
   @@index([saleId])
   @@index([responsibleEmployeeId])
   @@index([status])
+  @@index([paymentStatus])
   @@index([orderNumber])
   @@map("orders")
 }
@@ -451,4 +454,138 @@ model ProjectStatusHistory {
 
   @@index([projectId, createdAt])
   @@map("project_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// THURSDAY: PAYMENTS, AUDIT LOGS & ADDITIONAL SERVICES
+// ---------------------------------------------------------------------------
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  FULLY_PAID
+  OVERDUE
+}
+
+enum PaymentType {
+  DEPOSIT
+  MILESTONE
+  FINAL
+  OTHER
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  CHECK
+  MOBILE_MONEY
+  CREDIT_CARD
+  OTHER
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  ASSIGNMENT
+  PAYMENT_RECORDED
+  ACTIVATED
+  DEACTIVATED
+  OFFERED
+  SOLD
+  DECLINED
+}
+
+enum ServiceStatus {
+  OFFERED
+  SOLD
+  DECLINED
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  paymentNumber String        @unique
+  orderId       String
+  customerId    String
+  amount        Float
+  paymentType   PaymentType   @default(DEPOSIT)
+  paymentMethod PaymentMethod @default(BANK_TRANSFER)
+  paymentDate   DateTime      @default(now())
+  reference     String?
+  notes         String?       @db.Text
+  receivedById  String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  receivedBy User     @relation("ReceivedPayments", fields: [receivedById], references: [id])
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([receivedById])
+  @@index([paymentDate])
+  @@map("payments")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  action     AuditAction
+  entityType String
+  entityId   String
+  entityName String?
+  details    String      @db.Text
+  metadata   String?     @db.Text
+  createdAt  DateTime    @default(now())
+
+  user User? @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model AdditionalService {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  price       Float
+  isRecurring Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customerServices CustomerService[]
+
+  @@map("additional_services")
+}
+
+model CustomerService {
+  id                    String        @id @default(cuid())
+  customerId            String
+  serviceId             String
+  status                ServiceStatus @default(OFFERED)
+  agreedPrice           Float
+  isRecurring           Boolean       @default(true)
+  offeredDate           DateTime      @default(now())
+  soldDate              DateTime?
+  declinedDate          DateTime?
+  responsibleEmployeeId String?
+  notes                 String?       @db.Text
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  customer            Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service             AdditionalService @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  responsibleEmployee User?             @relation("EmployeeCustomerServices", fields: [responsibleEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([serviceId])
+  @@index([status])
+  @@index([responsibleEmployeeId])
+  @@map("customer_services")
 }

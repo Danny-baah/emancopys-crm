@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { LeadStatus, Role } from "@/lib/generated/prisma/enums";
+import { SalesStatus, Role } from "@/lib/generated/prisma/enums";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -28,8 +28,8 @@ export async function GET(req: NextRequest) {
     whereClause.assignedToId = assignedToId;
   }
 
-  if (status && status !== "ALL" && Object.values(LeadStatus).includes(status as LeadStatus)) {
-    whereClause.status = status as LeadStatus;
+  if (status && status !== "ALL" && Object.values(SalesStatus).includes(status as SalesStatus)) {
+    whereClause.status = status as SalesStatus;
   }
 
   if (search.trim()) {

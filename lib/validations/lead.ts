@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LeadStatus, ActivityType } from "@/lib/generated/prisma/enums";
+import { SalesStatus, ActivityType } from "@/lib/generated/prisma/enums";
 
 export const leadSchema = z.object({
   companyName: z
@@ -43,7 +43,7 @@ export const leadSchema = z.object({
     .trim()
     .optional()
     .or(z.literal("")),
-  status: z.nativeEnum(LeadStatus),
+  status: z.nativeEnum(SalesStatus),
   source: z
     .string()
     .max(100, "Source cannot exceed 100 characters")

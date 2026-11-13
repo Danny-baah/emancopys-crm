@@ -12,6 +12,8 @@ import {
   Briefcase,
   CreditCard,
   UserCheck,
+  ShieldCheck,
+  Sparkles,
   BarChart3,
   Settings,
 } from "lucide-react";
@@ -31,12 +33,17 @@ const coreNavItems: NavItem[] = [
   { name: "Quotations", href: "/quotations", icon: FileText },
   { name: "Orders", href: "/orders", icon: Calendar },
   { name: "Projects", href: "/projects", icon: Briefcase },
+  { name: "Payments", href: "/payments", icon: CreditCard },
+  { name: "Services", href: "/services", icon: Sparkles },
+];
+
+const adminNavItems: NavItem[] = [
+  { name: "Team & Employees", href: "/employees", icon: UserCheck },
+  { name: "Audit Trail", href: "/audit-logs", icon: ShieldCheck },
 ];
 
 const upcomingModules: { name: string; icon: React.ElementType }[] = [
-  { name: "Payments", icon: CreditCard },
-  { name: "Employees", icon: UserCheck },
-  { name: "Reports", icon: BarChart3 },
+  { name: "Advanced Reports", icon: BarChart3 },
   { name: "Settings", icon: Settings },
 ];
 
@@ -134,7 +141,41 @@ export function Sidebar() {
           </nav>
         </div>
 
-        {/* Section 2: Upcoming Modules */}
+        {/* Section 2: Management & Security */}
+        <div className="mb-7">
+          <div className="px-3 mb-2.5 text-[10px] font-semibold tracking-[0.2em] text-[#8aa9a1] uppercase">
+            Management & Security
+          </div>
+          <nav className="space-y-1.5">
+            {adminNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname.startsWith(item.href);
+
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-all",
+                    isActive
+                      ? "bg-[#f7c2c7] text-[#182922] font-semibold shadow-xs"
+                      : "text-[#9ab7b0] hover:text-white hover:bg-white/5 font-medium"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      isActive ? "text-[#182922]" : "text-[#9ab7b0]"
+                    )}
+                  />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Section 3: Upcoming Modules */}
         <div className="mb-6">
           <div className="px-3 mb-2.5 text-[10px] font-semibold tracking-[0.2em] text-[#8aa9a1] uppercase">
             Upcoming Modules

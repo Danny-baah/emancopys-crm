@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getLeadById } from "@/actions/leads";
 import { LeadActivityDialog } from "@/components/leads/lead-activity-dialog";
-import { ActivityType, LeadStatus } from "@/lib/generated/prisma/enums";
+import { ActivityType, SalesStatus } from "@/lib/generated/prisma/enums";
+import { SALES_STATUS_CONFIG } from "@/lib/constants/sales";
+import { LeadStatusStepperClient } from "@/components/leads/lead-status-stepper-client";
 import {
   ArrowLeft,
   Building2,
@@ -63,24 +65,13 @@ export default async function LeadDetailsPage({ params }: LeadDetailsPageProps) 
     }).format(val);
   }
 
-  function getStatusBadge(status: LeadStatus) {
-    switch (status) {
-      case LeadStatus.NEW:
-        return "bg-[#e6f4ff] text-[#0958d9] border-[#91caff]";
-      case LeadStatus.CONTACTED:
-        return "bg-[#f1edfb] text-[#6d51c7] border-[#ddd4f7]";
-      case LeadStatus.QUALIFIED:
-        return "bg-[#e8f6ed] text-[#2d7a4f] border-[#cbe8d5]";
-      case LeadStatus.PROPOSAL_SENT:
-        return "bg-[#fff7e6] text-[#d46b08] border-[#ffd591]";
-      case LeadStatus.CONVERTED:
-        return "bg-[#083d34] text-white border-[#083d34]";
-      case LeadStatus.LOST:
-        return "bg-[#fdeef0] text-[#c95965] border-[#fad5d9]";
-      default:
-        return "bg-[#f4f7f5] text-[#556660] border-[#dbe3df]";
-    }
-  }
+  const statusConfig = SALES_STATUS_CONFIG[lead.status] || {
+    label: lead.status,
+    bg: "bg-[#f4f7f5]",
+    text: "text-[#556660]",
+    border: "border-[#dbe3df]",
+    step: 1,
+  };
 
   function getActivityIcon(type: ActivityType) {
     switch (type) {
@@ -134,11 +125,9 @@ export default async function LeadDetailsPage({ params }: LeadDetailsPageProps) 
               {lead.companyName}
             </h1>
             <span
-              className={`px-3 py-1 rounded-full text-xs font-semibold border ${getStatusBadge(
-                lead.status
-              )}`}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
             >
-              {lead.status.replace("_", " ")}
+              <span>{statusConfig.step}.</span> {statusConfig.label}
             </span>
           </div>
           <p className="text-xs text-[#708078] mt-1 font-normal">
@@ -171,6 +160,13 @@ export default async function LeadDetailsPage({ params }: LeadDetailsPageProps) 
           </Link>
         </div>
       </div>
+
+      {/* Horizontal 10-Status Pipeline Stepper with Click-to-Transition */}
+      <LeadStatusStepperClient
+        leadId={lead.id}
+        leadName={lead.companyName}
+        currentStatus={lead.status}
+      />
 
       {/* Main Grid: Details (Left 5 cols) & Engagement Timeline (Right 7 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

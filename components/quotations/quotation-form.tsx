@@ -8,7 +8,7 @@ import {
   quotationSchema,
   type QuotationFormValues,
 } from "@/lib/validations/quotations";
-import { createQuotation } from "@/actions/quotations";
+import { createQuotation, updateQuotation } from "@/actions/quotations";
 import { QuotationStatus } from "@/lib/generated/prisma/enums";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -34,6 +34,7 @@ interface UserOption {
 }
 
 interface QuotationFormProps {
+  initialData?: QuotationFormValues & { id?: string };
   customers: CustomerOption[];
   sales: SaleOption[];
   employees: UserOption[];
@@ -49,6 +50,7 @@ const DEFAULT_VALID_UNTIL = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
   .slice(0, 10);
 
 export function QuotationForm({
+  initialData,
   customers,
   sales,
   employees,
@@ -63,7 +65,7 @@ export function QuotationForm({
 
   // Pre-fill initial defaults based on preselected sale if any
   const matchedSale = sales.find((s) => s.id === preselectedSaleId);
-  const [selectedSaleId, setSelectedSaleId] = useState(preselectedSaleId || "");
+  const [selectedSaleId, setSelectedSaleId] = useState(initialData?.saleId || preselectedSaleId || "");
 
   const {
     register,
@@ -73,15 +75,19 @@ export function QuotationForm({
   } = useForm<QuotationFormValues>({
     resolver: zodResolver(quotationSchema),
     defaultValues: {
-      customerId: preselectedCustomerId || matchedSale?.customerId || "",
-      saleId: preselectedSaleId || null,
-      serviceSold: matchedSale?.serviceType || "Corporate Website Design & Development",
-      quotationPrice: matchedSale?.estimatedValue || 15000,
-      quotationDate: DEFAULT_QUOTATION_DATE,
-      validUntil: DEFAULT_VALID_UNTIL,
-      responsibleEmployeeId: isAdmin ? "" : currentUserId,
-      status: QuotationStatus.DRAFT,
-      notes: "Quotation includes initial UI/UX wireframes, custom domain setup, responsive mobile optimization, and brand printing package.",
+      customerId: initialData?.customerId || preselectedCustomerId || matchedSale?.customerId || "",
+      saleId: initialData?.saleId || preselectedSaleId || null,
+      serviceSold: initialData?.serviceSold || matchedSale?.serviceType || "Corporate Website Design & Development",
+      quotationPrice: initialData?.quotationPrice || matchedSale?.estimatedValue || 15000,
+      quotationDate: initialData?.quotationDate
+        ? new Date(initialData.quotationDate).toISOString().slice(0, 10)
+        : DEFAULT_QUOTATION_DATE,
+      validUntil: initialData?.validUntil
+        ? new Date(initialData.validUntil).toISOString().slice(0, 10)
+        : DEFAULT_VALID_UNTIL,
+      responsibleEmployeeId: initialData?.responsibleEmployeeId || (isAdmin ? "" : currentUserId),
+      status: initialData?.status || QuotationStatus.DRAFT,
+      notes: initialData?.notes || "Quotation includes initial UI/UX wireframes, custom domain setup, responsive mobile optimization, and brand printing package.",
     },
   });
 
@@ -101,11 +107,17 @@ export function QuotationForm({
     setServerError(null);
 
     try {
-      const res = await createQuotation(data);
-      router.push(`/quotations/${res.quotationId}`);
-      router.refresh();
+      if (initialData?.id) {
+        await updateQuotation(initialData.id, data);
+        router.push(`/quotations/${initialData.id}`);
+        router.refresh();
+      } else {
+        const res = await createQuotation(data);
+        router.push(`/quotations/${res.quotationId}`);
+        router.refresh();
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to create quotation.";
+      const msg = err instanceof Error ? err.message : "Failed to save quotation.";
       setServerError(msg);
     } finally {
       setIsSubmitting(false);

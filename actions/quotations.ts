@@ -8,7 +8,8 @@ import {
   type QuotationFormValues,
 } from "@/lib/validations/quotations";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { QuotationStatus, SalesStatus, Role } from "@/lib/generated/prisma/enums";
+import { QuotationStatus, SalesStatus, Role, AuditAction } from "@/lib/generated/prisma/enums";
+import { logAudit } from "@/lib/audit";
 
 function safeRevalidate(path: string) {
   try {
@@ -256,6 +257,15 @@ export async function createQuotation(
     return q;
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.CREATE,
+    entityType: "QUOTATION",
+    entityId: result.id,
+    entityName: result.quotationNumber,
+    details: `Created Quotation ${result.quotationNumber} for €${result.quotationPrice.toFixed(2)}. Service: ${result.serviceSold}.`,
+  });
+
   safeRevalidate("/quotations");
   safeRevalidate("/sales");
   if (validated.saleId) safeRevalidate(`/sales/${validated.saleId}`);
@@ -322,10 +332,124 @@ export async function updateQuotationStatus(
     }
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "QUOTATION",
+    entityId: id,
+    entityName: quotation.quotationNumber,
+    details: `Quotation ${quotation.quotationNumber} status updated to ${newStatus}.`,
+  });
+
   safeRevalidate(`/quotations/${id}`);
   safeRevalidate("/quotations");
   if (quotation.saleId) safeRevalidate(`/sales/${quotation.saleId}`);
   safeRevalidate("/sales");
+  safeRevalidate("/dashboard");
+
+  return { success: true };
+}
+
+export async function updateQuotation(
+  id: string,
+  data: QuotationFormValues,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
+  const existing = await prisma.quotation.findUnique({
+    where: { id },
+    include: { customer: true, sale: true },
+  });
+
+  if (!existing) {
+    throw new Error("Quotation not found.");
+  }
+
+  if (
+    user.role !== Role.ADMIN &&
+    existing.responsibleEmployeeId !== user.id &&
+    existing.createdById !== user.id &&
+    existing.customer.assignedToId !== user.id
+  ) {
+    throw new Error("Unauthorized to edit this quotation.");
+  }
+
+  const validated = quotationSchema.parse(data);
+
+  const responsibleEmployeeId =
+    user.role === Role.ADMIN && validated.responsibleEmployeeId?.trim()
+      ? validated.responsibleEmployeeId.trim()
+      : existing.responsibleEmployeeId;
+
+  const statusChanged = validated.status !== existing.status;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.quotation.update({
+      where: { id },
+      data: {
+        customerId: validated.customerId,
+        saleId: validated.saleId || null,
+        serviceSold: validated.serviceSold,
+        quotationPrice: validated.quotationPrice,
+        quotationDate: validated.quotationDate
+          ? new Date(validated.quotationDate)
+          : existing.quotationDate,
+        validUntil: validated.validUntil
+          ? new Date(validated.validUntil)
+          : null,
+        responsibleEmployeeId,
+        status: validated.status,
+        notes: validated.notes || null,
+      },
+    });
+
+    if (statusChanged && (validated.saleId || existing.saleId)) {
+      const saleId = validated.saleId || existing.saleId;
+      if (saleId) {
+        const sale = await tx.sale.findUnique({ where: { id: saleId } });
+        if (sale) {
+          let targetSaleStatus: SalesStatus | null = null;
+          if (validated.status === QuotationStatus.SENT) {
+            targetSaleStatus = SalesStatus.QUOTATION_SENT;
+          } else if (validated.status === QuotationStatus.ACCEPTED) {
+            targetSaleStatus = SalesStatus.DEAL_WON;
+          }
+          if (targetSaleStatus && sale.status !== targetSaleStatus) {
+            await tx.sale.update({
+              where: { id: sale.id },
+              data: {
+                status: targetSaleStatus,
+                wonAt: targetSaleStatus === SalesStatus.DEAL_WON ? new Date() : undefined,
+              },
+            });
+            await tx.saleStatusHistory.create({
+              data: {
+                saleId: sale.id,
+                userId: user.id,
+                fromStatus: sale.status,
+                toStatus: targetSaleStatus,
+                notes: `Quotation ${existing.quotationNumber} updated to ${validated.status}.`,
+              },
+            });
+          }
+        }
+      }
+    }
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: statusChanged ? AuditAction.STATUS_CHANGE : AuditAction.UPDATE,
+    entityType: "QUOTATION",
+    entityId: id,
+    entityName: existing.quotationNumber,
+    details: `Updated Quotation ${existing.quotationNumber} (Status: ${validated.status}, Price: €${validated.quotationPrice.toFixed(2)}).`,
+  });
+
+  safeRevalidate(`/quotations/${id}`);
+  safeRevalidate("/quotations");
+  if (existing.saleId) safeRevalidate(`/sales/${existing.saleId}`);
+  if (validated.saleId) safeRevalidate(`/sales/${validated.saleId}`);
   safeRevalidate("/dashboard");
 
   return { success: true };

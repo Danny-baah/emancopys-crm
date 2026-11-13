@@ -2,10 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth-utils";
+import { requireAuth, type AuthenticatedUser } from "@/lib/auth-utils";
 import { leadSchema, leadActivitySchema, type LeadFormValues, type LeadActivityFormValues } from "@/lib/validations/lead";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { LeadStatus, Role } from "@/lib/generated/prisma/enums";
+import { SalesStatus, Role, AuditAction } from "@/lib/generated/prisma/enums";
+import { logAudit } from "@/lib/audit";
+
+function safeRevalidate(path: string) {
+  try {
+    revalidatePath(path);
+  } catch {
+    // Ignore outside active request
+  }
+}
 
 export interface GetLeadsParams {
   search?: string;
@@ -15,14 +24,17 @@ export interface GetLeadsParams {
   assignedToId?: string;
 }
 
-export async function getLeads({
-  search = "",
-  status = "",
-  page = 1,
-  limit = 10,
-  assignedToId = "",
-}: GetLeadsParams) {
-  const user = await requireAuth();
+export async function getLeads(
+  {
+    search = "",
+    status = "",
+    page = 1,
+    limit = 10,
+    assignedToId = "",
+  }: GetLeadsParams = {},
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
 
   const take = Math.max(1, Math.min(100, limit));
   const skip = (Math.max(1, page) - 1) * take;
@@ -40,8 +52,8 @@ export async function getLeads({
   }
 
   // Status filter
-  if (status && status !== "ALL" && Object.values(LeadStatus).includes(status as LeadStatus)) {
-    whereClause.status = status as LeadStatus;
+  if (status && status !== "ALL" && Object.values(SalesStatus).includes(status as SalesStatus)) {
+    whereClause.status = status as SalesStatus;
   }
 
   // Search filter across companyName, contactPerson, email, phone
@@ -119,8 +131,8 @@ export async function getLeads({
   };
 }
 
-export async function getLeadById(id: string) {
-  const user = await requireAuth();
+export async function getLeadById(id: string, userContext?: AuthenticatedUser) {
+  const user = userContext || (await requireAuth());
 
   const lead = await prisma.lead.findUnique({
     where: { id },
@@ -178,8 +190,8 @@ export async function getLeadById(id: string) {
   return lead;
 }
 
-export async function createLead(data: LeadFormValues) {
-  const user = await requireAuth();
+export async function createLead(data: LeadFormValues, userContext?: AuthenticatedUser) {
+  const user = userContext || (await requireAuth());
   const validated = leadSchema.parse(data);
 
   let assignedToId: string | null = null;
@@ -198,7 +210,7 @@ export async function createLead(data: LeadFormValues) {
       jobTitle: validated.jobTitle || null,
       industry: validated.industry || null,
       location: validated.location || null,
-      status: validated.status || LeadStatus.NEW,
+      status: validated.status || SalesStatus.NEW_LEAD,
       source: validated.source || "Manual Entry",
       estimatedValue: validated.estimatedValue ?? null,
       notes: validated.notes || null,
@@ -215,14 +227,27 @@ export async function createLead(data: LeadFormValues) {
     },
   });
 
-  revalidatePath("/leads");
-  revalidatePath("/dashboard");
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.CREATE,
+    entityType: "LEAD",
+    entityId: lead.id,
+    entityName: lead.companyName,
+    details: `Created lead "${lead.companyName}" (Status: ${lead.status}).`,
+  });
+
+  safeRevalidate("/leads");
+  safeRevalidate("/dashboard");
 
   return { leadId: lead.id };
 }
 
-export async function updateLead(id: string, data: LeadFormValues) {
-  const user = await requireAuth();
+export async function updateLead(
+  id: string,
+  data: LeadFormValues,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
   const existing = await prisma.lead.findUnique({
     where: { id },
     select: { id: true, assignedToId: true, createdById: true, status: true },
@@ -282,19 +307,30 @@ export async function updateLead(id: string, data: LeadFormValues) {
     }
   });
 
-  revalidatePath(`/leads/${id}`);
-  revalidatePath("/leads");
-  revalidatePath("/dashboard");
+  await logAudit({
+    userId: user.id,
+    action: statusChanged ? AuditAction.STATUS_CHANGE : AuditAction.UPDATE,
+    entityType: "LEAD",
+    entityId: id,
+    entityName: validated.companyName,
+    details: statusChanged
+      ? `Lead status changed from ${existing.status} to ${validated.status}.`
+      : `Updated lead details for "${validated.companyName}".`,
+  });
+
+  safeRevalidate(`/leads/${id}`);
+  safeRevalidate("/leads");
+  safeRevalidate("/dashboard");
 
   return { success: true };
 }
 
-export async function deleteLead(id: string) {
-  const user = await requireAuth();
+export async function deleteLead(id: string, userContext?: AuthenticatedUser) {
+  const user = userContext || (await requireAuth());
 
   const existing = await prisma.lead.findUnique({
     where: { id },
-    select: { id: true, assignedToId: true, createdById: true },
+    select: { id: true, companyName: true, assignedToId: true, createdById: true },
   });
 
   if (!existing) {
@@ -310,14 +346,27 @@ export async function deleteLead(id: string) {
     where: { id },
   });
 
-  revalidatePath("/leads");
-  revalidatePath("/dashboard");
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.DELETE,
+    entityType: "LEAD",
+    entityId: id,
+    entityName: existing.companyName,
+    details: `Deleted lead record "${existing.companyName}".`,
+  });
+
+  safeRevalidate("/leads");
+  safeRevalidate("/dashboard");
 
   return { success: true };
 }
 
-export async function logLeadActivity(leadId: string, data: LeadActivityFormValues) {
-  const user = await requireAuth();
+export async function logLeadActivity(
+  leadId: string,
+  data: LeadActivityFormValues,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
 
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },
@@ -348,14 +397,18 @@ export async function logLeadActivity(leadId: string, data: LeadActivityFormValu
     },
   });
 
-  revalidatePath(`/leads/${leadId}`);
-  revalidatePath("/leads");
+  safeRevalidate(`/leads/${leadId}`);
+  safeRevalidate("/leads");
 
   return { success: true };
 }
 
-export async function updateLeadStatus(leadId: string, newStatus: LeadStatus) {
-  const user = await requireAuth();
+export async function updateLeadStatus(
+  leadId: string,
+  newStatus: SalesStatus,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
 
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },
@@ -393,8 +446,8 @@ export async function updateLeadStatus(leadId: string, newStatus: LeadStatus) {
     });
   });
 
-  revalidatePath(`/leads/${leadId}`);
-  revalidatePath("/leads");
+  safeRevalidate(`/leads/${leadId}`);
+  safeRevalidate("/leads");
 
   return { success: true };
 }

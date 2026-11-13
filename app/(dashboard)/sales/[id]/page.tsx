@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth-utils";
 import { getSaleById } from "@/actions/sales";
-import { SalePipelineStepper } from "@/components/sales/sale-pipeline-stepper";
+import { SaleStatusStepperClient } from "@/components/sales/sale-status-stepper-client";
 import { SaleCommunicationsPanel } from "@/components/sales/sale-communications-panel";
 import { SaleTasksPanel } from "@/components/sales/sale-tasks-panel";
 import { SALES_STATUS_CONFIG } from "@/lib/constants/sales";
@@ -132,8 +132,12 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
         </div>
       </div>
 
-      {/* Horizontal Pipeline Stepper (All 10 Statuses) */}
-      <SalePipelineStepper currentStatus={sale.status} />
+      {/* Interactive Horizontal Pipeline Stepper (All 10 Statuses) */}
+      <SaleStatusStepperClient
+        saleId={sale.id}
+        currentStatus={sale.status}
+        dealTitle={sale.title}
+      />
 
       {/* Main Grid: Left side intelligence & records, Right side communications & tasks */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

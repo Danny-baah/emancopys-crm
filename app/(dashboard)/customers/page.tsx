@@ -20,6 +20,10 @@ interface CustomersPageProps {
     page?: string;
     archived?: string;
     tab?: string;
+    industry?: string;
+    assignedToId?: string;
+    sortBy?: string;
+    sortOrder?: string;
   }>;
 }
 
@@ -32,33 +36,82 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
   const page = Math.max(1, parseInt(resolvedParams.page || "1", 10));
 
   const tab = resolvedParams.tab || (resolvedParams.archived === "true" ? "archived" : "all");
-  const isArchived = tab === "archived";
+  let archivedFilter: boolean | undefined = undefined;
+  if (tab === "archived") {
+    archivedFilter = true;
+  } else if (tab === "active") {
+    archivedFilter = false;
+  } else {
+    archivedFilter = undefined; // "all" shows both active and archived
+  }
+
+  const industry = resolvedParams.industry || "";
+  const assignedToId = resolvedParams.assignedToId || "";
+  const sortBy: "createdAt" | "companyName" | "contactPerson" | "updatedAt" =
+    resolvedParams.sortBy === "companyName" ||
+    resolvedParams.sortBy === "contactPerson" ||
+    resolvedParams.sortBy === "updatedAt"
+      ? resolvedParams.sortBy
+      : "createdAt";
+  const sortOrder: "asc" | "desc" =
+    resolvedParams.sortOrder === "asc" ? "asc" : "desc";
 
   // Base scope for counting
   const userScope = isAdmin
     ? {}
     : { OR: [{ assignedToId: user.id }, { createdById: user.id }] };
 
-  // Fetch counts and customers
-  const [totalAllCount, activeCount, archivedCount, myAssignedCount, customerData] =
-    await Promise.all([
-      prisma.customer.count({ where: userScope }),
-      prisma.customer.count({
-        where: { ...userScope, archivedAt: null },
-      }),
-      prisma.customer.count({
-        where: { ...userScope, archivedAt: { not: null } },
-      }),
-      prisma.customer.count({
-        where: { assignedToId: user.id, archivedAt: null },
-      }),
-      getCustomers({
-        search,
-        page,
-        limit: 10,
-        archived: isArchived,
-      }),
-    ]);
+  // Fetch counts, industries, team members, and customers
+  const [
+    totalAllCount,
+    activeCount,
+    archivedCount,
+    myAssignedCount,
+    industriesRaw,
+    teamMembers,
+    customerData,
+  ] = await Promise.all([
+    prisma.customer.count({ where: userScope }),
+    prisma.customer.count({
+      where: { ...userScope, archivedAt: null },
+    }),
+    prisma.customer.count({
+      where: { ...userScope, archivedAt: { not: null } },
+    }),
+    prisma.customer.count({
+      where: { assignedToId: user.id, archivedAt: null },
+    }),
+    prisma.customer.findMany({
+      where: { industry: { not: null }, ...userScope },
+      select: { industry: true },
+      distinct: ["industry"],
+    }),
+    isAdmin
+      ? prisma.user.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    getCustomers({
+      search,
+      page,
+      limit: 10,
+      archived: archivedFilter,
+      industry,
+      assignedToId,
+      sortBy,
+      sortOrder,
+    }),
+  ]);
+
+  const industries = Array.from(
+    new Set(
+      industriesRaw
+        .map((c) => c.industry)
+        .filter((ind): ind is string => Boolean(ind && ind.trim()))
+    )
+  ).sort();
 
   return (
     <div className="space-y-8">
@@ -186,6 +239,12 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
         <CustomerFilters
           initialSearch={search}
           currentTab={tab as "all" | "active" | "archived"}
+          currentIndustry={industry}
+          currentAssignedToId={assignedToId}
+          currentSortBy={sortBy}
+          currentSortOrder={sortOrder}
+          industries={industries}
+          teamMembers={teamMembers}
           counts={{
             all: totalAllCount,
             active: activeCount,
@@ -200,6 +259,9 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
         totalCount={customerData.totalCount}
         currentPage={customerData.currentPage}
         totalPages={customerData.totalPages}
+        activeSearch={search}
+        activeIndustry={industry}
+        activeAssignedToId={assignedToId}
       />
     </div>
   );

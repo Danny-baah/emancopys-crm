@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, type AuthenticatedUser } from "@/lib/auth-utils";
 import { orderSchema, type OrderFormValues } from "@/lib/validations/orders";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { OrderStatus, ProjectStatus, SalesStatus, Role } from "@/lib/generated/prisma/enums";
+import { OrderStatus, ProjectStatus, SalesStatus, Role, AuditAction } from "@/lib/generated/prisma/enums";
+import { logAudit } from "@/lib/audit";
 
 function safeRevalidate(path: string) {
   try {
@@ -100,7 +101,15 @@ export async function getOrders(
             quotationPrice: true,
           },
         },
-        project: {
+        payments: {
+        orderBy: { paymentDate: "desc" },
+        include: {
+          receivedBy: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      },
+      project: {
           select: {
             id: true,
             projectNumber: true,
@@ -141,6 +150,14 @@ export async function getOrderById(id: string, userContext?: AuthenticatedUser) 
           id: true,
           name: true,
           email: true,
+        },
+      },
+      payments: {
+        orderBy: { paymentDate: "desc" },
+        include: {
+          receivedBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
       },
       project: {
@@ -281,6 +298,15 @@ export async function createOrder(
     return { order, project: createdProject };
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.CREATE,
+    entityType: "ORDER",
+    entityId: result.order.id,
+    entityName: result.order.orderNumber,
+    details: `Created Order ${result.order.orderNumber} for ${result.order.customer.companyName}. Total Amount: €${result.order.totalAmount.toFixed(2)}. Service: ${result.order.serviceSold}.`,
+  });
+
   safeRevalidate("/orders");
   safeRevalidate("/projects");
   safeRevalidate("/quotations");
@@ -293,4 +319,119 @@ export async function createOrder(
     projectId: result.project?.id,
     projectNumber: result.project?.projectNumber,
   };
+}
+
+export async function updateOrder(
+  id: string,
+  data: OrderFormValues,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
+  const existing = await prisma.order.findUnique({
+    where: { id },
+    include: { customer: true },
+  });
+
+  if (!existing) {
+    throw new Error("Order not found.");
+  }
+
+  if (
+    user.role !== Role.ADMIN &&
+    existing.responsibleEmployeeId !== user.id &&
+    existing.createdById !== user.id &&
+    existing.customer.assignedToId !== user.id
+  ) {
+    throw new Error("Unauthorized to edit this order.");
+  }
+
+  const validated = orderSchema.parse(data);
+
+  const responsibleEmployeeId =
+    user.role === Role.ADMIN && validated.responsibleEmployeeId?.trim()
+      ? validated.responsibleEmployeeId.trim()
+      : existing.responsibleEmployeeId;
+
+  const statusChanged = validated.status !== existing.status;
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: {
+      customerId: validated.customerId,
+      quotationId: validated.quotationId || null,
+      saleId: validated.saleId || null,
+      serviceSold: validated.serviceSold,
+      totalAmount: validated.totalAmount,
+      agreedCommission: validated.agreedCommission,
+      orderDate: validated.orderDate ? new Date(validated.orderDate) : existing.orderDate,
+      responsibleEmployeeId,
+      status: validated.status,
+      notes: validated.notes || null,
+    },
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: statusChanged ? AuditAction.STATUS_CHANGE : AuditAction.UPDATE,
+    entityType: "ORDER",
+    entityId: id,
+    entityName: existing.orderNumber,
+    details: statusChanged
+      ? `Order ${existing.orderNumber} status changed from ${existing.status} to ${validated.status}.`
+      : `Updated Order ${existing.orderNumber} details (Total: €${validated.totalAmount.toFixed(2)}, Commission: €${validated.agreedCommission.toFixed(2)}).`,
+  });
+
+  safeRevalidate(`/orders/${id}`);
+  safeRevalidate("/orders");
+  safeRevalidate("/dashboard");
+
+  return { success: true, order: updated };
+}
+
+export async function updateOrderStatus(
+  id: string,
+  status: OrderStatus,
+  notes?: string,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
+  const existing = await prisma.order.findUnique({
+    where: { id },
+    include: { customer: true },
+  });
+
+  if (!existing) {
+    throw new Error("Order not found.");
+  }
+
+  if (
+    user.role !== Role.ADMIN &&
+    existing.responsibleEmployeeId !== user.id &&
+    existing.createdById !== user.id &&
+    existing.customer.assignedToId !== user.id
+  ) {
+    throw new Error("Unauthorized to change order status.");
+  }
+
+  if (existing.status === status) return { success: true };
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: { status },
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "ORDER",
+    entityId: id,
+    entityName: existing.orderNumber,
+    details: `Order ${existing.orderNumber} status changed from ${existing.status} to ${status}.${notes ? ` Note: ${notes}` : ""}`,
+  });
+
+  safeRevalidate(`/orders/${id}`);
+  safeRevalidate("/orders");
+  safeRevalidate("/dashboard");
+
+  return { success: true, order: updated };
 }

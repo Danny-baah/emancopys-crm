@@ -2,64 +2,103 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, canManageCustomer } from "@/lib/auth-utils";
+import { requireAuth, canManageCustomer, type AuthenticatedUser } from "@/lib/auth-utils";
 import { customerSchema, type CustomerFormValues } from "@/lib/validations/customer";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { ActivityType, Role } from "@/lib/generated/prisma/enums";
+import { ActivityType, Role, AuditAction } from "@/lib/generated/prisma/enums";
+import { logAudit } from "@/lib/audit";
 
 export interface GetCustomersParams {
   search?: string;
   page?: number;
   limit?: number;
-  archived?: boolean;
+  archived?: boolean | null;
+  industry?: string;
+  assignedToId?: string;
+  sortBy?: "createdAt" | "companyName" | "contactPerson" | "updatedAt";
+  sortOrder?: "asc" | "desc";
 }
 
-export async function getCustomers({
-  search = "",
-  page = 1,
-  limit = 10,
-  archived = false,
-}: GetCustomersParams) {
-  const user = await requireAuth();
+export async function getCustomers(
+  {
+    search = "",
+    page = 1,
+    limit = 10,
+    archived,
+    industry = "",
+    assignedToId = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+  }: GetCustomersParams,
+  userContext?: AuthenticatedUser
+) {
+  const user = userContext || (await requireAuth());
 
   const take = Math.max(1, Math.min(100, limit));
   const skip = (Math.max(1, page) - 1) * take;
 
-  const whereClause: Prisma.CustomerWhereInput = {
-    archivedAt: archived ? { not: null } : null,
-  };
+  const andConditions: Prisma.CustomerWhereInput[] = [];
 
-  // Role-based visibility: employees only see their assigned customers or customers they created
-  if (user.role !== Role.ADMIN) {
-    whereClause.OR = [
-      { assignedToId: user.id },
-      { createdById: user.id },
-    ];
+  // 1. Archive status filter:
+  // true = only archived, false = only active, null/undefined = all customers
+  if (archived === true) {
+    andConditions.push({ archivedAt: { not: null } });
+  } else if (archived === false) {
+    andConditions.push({ archivedAt: null });
   }
 
-  // Search filter across companyName, contactPerson, email, phone
-  if (search.trim()) {
+  // 2. Role-based visibility and assigned employee filter
+  if (user.role !== Role.ADMIN) {
+    andConditions.push({
+      OR: [
+        { assignedToId: user.id },
+        { createdById: user.id },
+      ],
+    });
+  } else if (assignedToId && assignedToId !== "ALL") {
+    andConditions.push({ assignedToId });
+  }
+
+  // 3. Industry filter
+  if (industry && industry !== "ALL") {
+    andConditions.push({
+      industry: { equals: industry, mode: "insensitive" },
+    });
+  }
+
+  // 4. Search filter across companyName, contactPerson, email, phone
+  if (search && search.trim()) {
+    const term = search.trim();
     const searchFilter = {
-      contains: search.trim(),
+      contains: term,
       mode: "insensitive" as const,
     };
 
-    const searchConditions = [
-      { companyName: searchFilter },
-      { contactPerson: searchFilter },
-      { email: searchFilter },
-      { phone: searchFilter },
-    ];
+    andConditions.push({
+      OR: [
+        { companyName: searchFilter },
+        { contactPerson: searchFilter },
+        { email: searchFilter },
+        { phone: searchFilter },
+      ],
+    });
+  }
 
-    if (whereClause.OR) {
-      whereClause.AND = [
-        { OR: whereClause.OR },
-        { OR: searchConditions },
-      ];
-      delete whereClause.OR;
-    } else {
-      whereClause.OR = searchConditions;
-    }
+  const whereClause: Prisma.CustomerWhereInput =
+    andConditions.length > 0 ? { AND: andConditions } : {};
+
+  // 5. Sort ordering
+  const validSortOrder: "asc" | "desc" = sortOrder === "asc" ? "asc" : "desc";
+  let orderBy: Prisma.CustomerOrderByWithRelationInput = { createdAt: "desc" };
+
+  if (sortBy === "companyName") {
+    orderBy = { companyName: validSortOrder };
+  } else if (sortBy === "contactPerson") {
+    orderBy = { contactPerson: validSortOrder };
+  } else if (sortBy === "updatedAt") {
+    orderBy = { updatedAt: validSortOrder };
+  } else {
+    orderBy = { createdAt: validSortOrder };
   }
 
   const [totalCount, customers] = await Promise.all([
@@ -68,7 +107,7 @@ export async function getCustomers({
       where: whereClause,
       skip,
       take,
-      orderBy: { createdAt: "desc" },
+      orderBy,
       include: {
         assignedTo: {
           select: {
@@ -144,6 +183,19 @@ export async function getCustomerById(id: string) {
           },
         },
       },
+      customerServices: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          service: true,
+          responsibleEmployee: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -197,6 +249,15 @@ export async function createCustomer(formData: CustomerFormValues) {
         },
       },
     },
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.CREATE,
+    entityType: "CUSTOMER",
+    entityId: customer.id,
+    entityName: customer.companyName,
+    details: `Created customer profile for "${customer.companyName}". Contact: ${customer.contactPerson}.`,
   });
 
   revalidatePath("/customers");
@@ -270,6 +331,15 @@ export async function updateCustomer(id: string, formData: CustomerFormValues) {
     },
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.UPDATE,
+    entityType: "CUSTOMER",
+    entityId: id,
+    entityName: existing.companyName,
+    details: `Restored customer profile for "${existing.companyName}" from archive to active status.`,
+  });
+
   revalidatePath(`/customers/${id}`);
   revalidatePath("/customers");
   revalidatePath("/dashboard");
@@ -307,6 +377,15 @@ export async function archiveCustomer(id: string) {
     },
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.UPDATE,
+    entityType: "CUSTOMER",
+    entityId: id,
+    entityName: existing.companyName,
+    details: `Restored customer profile for "${existing.companyName}" from archive to active status.`,
+  });
+
   revalidatePath(`/customers/${id}`);
   revalidatePath("/customers");
   revalidatePath("/dashboard");
@@ -342,6 +421,15 @@ export async function restoreCustomer(id: string) {
         },
       },
     },
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.UPDATE,
+    entityType: "CUSTOMER",
+    entityId: id,
+    entityName: existing.companyName,
+    details: `Restored customer profile for "${existing.companyName}" from archive to active status.`,
   });
 
   revalidatePath(`/customers/${id}`);

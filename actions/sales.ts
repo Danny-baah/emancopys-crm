@@ -12,7 +12,8 @@ import {
   type SaleTaskFormValues,
 } from "@/lib/validations/sales";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { SalesStatus, Role } from "@/lib/generated/prisma/enums";
+import { SalesStatus, Role, AuditAction } from "@/lib/generated/prisma/enums";
+import { logAudit } from "@/lib/audit";
 
 function safeRevalidate(path: string) {
   try {
@@ -276,6 +277,15 @@ export async function createSale(data: SaleFormValues, userContext?: Authenticat
     return s;
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.CREATE,
+    entityType: "SALE",
+    entityId: sale.id,
+    entityName: sale.title,
+    details: `Created deal "${sale.title}" (Status: ${sale.status}).`,
+  });
+
   safeRevalidate("/sales");
   safeRevalidate("/dashboard");
   return { saleId: sale.id };
@@ -400,6 +410,14 @@ export async function updateSaleStatus(
     });
   });
 
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "SALE",
+    entityId: id,
+    details: `Deal status transitioned from ${existing.status} to ${newStatus}.`,
+  });
+
   safeRevalidate(`/sales/${id}`);
   safeRevalidate("/sales");
   safeRevalidate("/dashboard");
@@ -463,6 +481,14 @@ export async function logSaleCommunication(
         data: saleUpdate,
       });
     }
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: AuditAction.CREATE,
+    entityType: "SALE",
+    entityId: saleId,
+    details: `Documented conversation (${validated.activityType}): "${validated.subject}".`,
   });
 
   safeRevalidate(`/sales/${saleId}`);

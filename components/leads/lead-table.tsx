@@ -15,7 +15,8 @@ import {
   Trash2,
   CheckCircle,
 } from "lucide-react";
-import { LeadStatus } from "@/lib/generated/prisma/enums";
+import { SalesStatus } from "@/lib/generated/prisma/enums";
+import { ORDERED_SALES_STATUSES, SALES_STATUS_CONFIG } from "@/lib/constants/sales";
 import { deleteLead, updateLeadStatus } from "@/actions/leads";
 import { toast } from "sonner";
 import {
@@ -35,7 +36,7 @@ interface LeadItem {
   jobTitle: string | null;
   industry: string | null;
   location: string | null;
-  status: LeadStatus;
+  status: SalesStatus;
   source: string | null;
   estimatedValue: number | null;
   createdAt: Date;
@@ -83,7 +84,7 @@ export function LeadTable({
 
   // Status Change Dialog state
   const [statusTarget, setStatusTarget] = useState<LeadItem | null>(null);
-  const [newStatus, setNewStatus] = useState<LeadStatus>(LeadStatus.NEW);
+  const [newStatus, setNewStatus] = useState<SalesStatus>(SalesStatus.NEW_LEAD);
 
   function toggleSelectAll() {
     if (selectedIds.length === leads.length) {
@@ -137,23 +138,12 @@ export function LeadTable({
     }
   }
 
-  function getStatusBadge(status: LeadStatus) {
-    switch (status) {
-      case LeadStatus.NEW:
-        return "bg-[#e6f4ff] text-[#0958d9] border-[#91caff]";
-      case LeadStatus.CONTACTED:
-        return "bg-[#f1edfb] text-[#6d51c7] border-[#ddd4f7]";
-      case LeadStatus.QUALIFIED:
-        return "bg-[#e8f6ed] text-[#2d7a4f] border-[#cbe8d5]";
-      case LeadStatus.PROPOSAL_SENT:
-        return "bg-[#fff7e6] text-[#d46b08] border-[#ffd591]";
-      case LeadStatus.CONVERTED:
-        return "bg-[#083d34] text-white border-[#083d34]";
-      case LeadStatus.LOST:
-        return "bg-[#fdeef0] text-[#c95965] border-[#fad5d9]";
-      default:
-        return "bg-[#f4f7f5] text-[#556660] border-[#dbe3df]";
+  function getStatusBadge(status: SalesStatus) {
+    const config = SALES_STATUS_CONFIG[status];
+    if (config) {
+      return `${config.bg} ${config.text} ${config.border}`;
     }
+    return "bg-[#f4f7f5] text-[#556660] border-[#dbe3df]";
   }
 
   function formatDate(date: Date) {
@@ -312,7 +302,7 @@ export function LeadTable({
                           )} hover:opacity-80 transition-opacity cursor-pointer`}
                           title="Click to update status"
                         >
-                          {l.status.replace("_", " ")}
+                          {SALES_STATUS_CONFIG[l.status]?.label || l.status}
                         </button>
                       </td>
 
@@ -514,12 +504,12 @@ export function LeadTable({
                 </label>
                 <select
                   value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as LeadStatus)}
+                  onChange={(e) => setNewStatus(e.target.value as SalesStatus)}
                   className="w-full h-11 px-3.5 rounded-xl border border-[#e1e6e3] bg-white text-xs text-[#182922] focus:outline-none focus:border-[#083d34] focus:ring-1 focus:ring-[#083d34] transition-all"
                 >
-                  {Object.values(LeadStatus).map((s) => (
+                  {ORDERED_SALES_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s.replace("_", " ")}
+                      {SALES_STATUS_CONFIG[s].step}. {SALES_STATUS_CONFIG[s].label}
                     </option>
                   ))}
                 </select>

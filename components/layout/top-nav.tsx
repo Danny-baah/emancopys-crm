@@ -214,6 +214,77 @@ export function TopNav({ user }: TopNavProps) {
       );
     }
 
+    if (pathname.startsWith("/payments")) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-[#708078]">
+          <Link href="/dashboard" className="hover:text-[#182922] transition-colors">
+            <Home className="w-3.5 h-3.5 text-[#8aa9a1]" />
+          </Link>
+          <span>Workspace</span>
+          <span className="text-[#a0aca6]">&gt;</span>
+          <span className="font-semibold text-[#182922]">Payment Management</span>
+        </div>
+      );
+    }
+
+    if (pathname.startsWith("/services")) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-[#708078]">
+          <Link href="/dashboard" className="hover:text-[#182922] transition-colors">
+            <Home className="w-3.5 h-3.5 text-[#8aa9a1]" />
+          </Link>
+          <span>Workspace</span>
+          <span className="text-[#a0aca6]">&gt;</span>
+          <span className="font-semibold text-[#182922]">Additional Services</span>
+        </div>
+      );
+    }
+
+    if (pathname.startsWith("/employees")) {
+      const isNew = pathname === "/employees/new";
+      const isEdit = pathname.endsWith("/edit");
+      return (
+        <div className="flex items-center gap-2 text-xs text-[#708078]">
+          <Link href="/dashboard" className="hover:text-[#182922] transition-colors">
+            <Home className="w-3.5 h-3.5 text-[#8aa9a1]" />
+          </Link>
+          <span>Workspace</span>
+          <span className="text-[#a0aca6]">&gt;</span>
+          <Link
+            href="/employees"
+            className={isNew || isEdit ? "hover:text-[#182922] transition-colors" : "font-semibold text-[#182922]"}
+          >
+            Team & Employees
+          </Link>
+          {isNew && (
+            <>
+              <span className="text-[#a0aca6]">&gt;</span>
+              <span className="font-semibold text-[#182922]">New Employee</span>
+            </>
+          )}
+          {isEdit && (
+            <>
+              <span className="text-[#a0aca6]">&gt;</span>
+              <span className="font-semibold text-[#182922]">Edit Employee</span>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (pathname.startsWith("/audit-logs")) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-[#708078]">
+          <Link href="/dashboard" className="hover:text-[#182922] transition-colors">
+            <Home className="w-3.5 h-3.5 text-[#8aa9a1]" />
+          </Link>
+          <span>Workspace</span>
+          <span className="text-[#a0aca6]">&gt;</span>
+          <span className="font-semibold text-[#182922]">Audit Trail</span>
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center gap-2 text-xs text-[#708078]">
         <Home className="w-3.5 h-3.5 text-[#8aa9a1]" />

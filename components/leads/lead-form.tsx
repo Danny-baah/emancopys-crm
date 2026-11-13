@@ -6,7 +6,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { leadSchema, type LeadFormValues } from "@/lib/validations/lead";
 import { createLead, updateLead } from "@/actions/leads";
-import { LeadStatus } from "@/lib/generated/prisma/enums";
+import { SalesStatus } from "@/lib/generated/prisma/enums";
+import { ORDERED_SALES_STATUSES, SALES_STATUS_CONFIG } from "@/lib/constants/sales";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -62,7 +63,7 @@ export function LeadForm({
       jobTitle: initialData?.jobTitle || "",
       industry: initialData?.industry || "",
       location: initialData?.location || "",
-      status: initialData?.status || LeadStatus.NEW,
+      status: initialData?.status || SalesStatus.NEW_LEAD,
       source: initialData?.source || "Direct Outreach",
       estimatedValue: initialData?.estimatedValue ?? undefined,
       notes: initialData?.notes || "",
@@ -331,9 +332,9 @@ export function LeadForm({
               disabled={isSubmitting}
               className="w-full h-11 px-3.5 rounded-xl border border-[#e1e6e3] bg-white text-xs text-[#182922] focus:outline-none focus:border-[#083d34] focus:ring-1 focus:ring-[#083d34] transition-all"
             >
-              {Object.values(LeadStatus).map((s) => (
+              {ORDERED_SALES_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replace("_", " ")}
+                  {SALES_STATUS_CONFIG[s].step}. {SALES_STATUS_CONFIG[s].label}
                 </option>
               ))}
             </select>
